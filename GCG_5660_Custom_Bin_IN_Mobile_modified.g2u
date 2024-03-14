@@ -1,0 +1,148 @@
+﻿Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Author: Bix
+'Date: 3 Sept 2019
+'GCG_5660_Custom_Bin_In_Mobile.g2u
+'Bin IN custom mobile transaction
+'Modified by Arturo Almaguer on 5 Aug 2021 to remove the subroutine that is deleting all parts stored in a bin so customer can store multiple parts in a bin.
+'Every line left out can be identified due to those lines being commented and they begin with ''
+
+V.Local.sError.Declare
+''V.Local.sReturn.Declare
+F.Intrinsic.Control.Try
+
+F.Intrinsic.Control.CallSub(BinInTransChecks,"sTransID",V.Passed.DATA-TRANSID)
+''V.Local.sReturn.Set(V.Args.Return)
+
+''F.Intrinsic.Control.If(V.DataTable.dtBins.RowCount,>,0)
+''	F.Intrinsic.Control.CallSub(RemoveBinsInTable,"sTransID",V.Passed.DATA-TRANSID,"Return",V.Local.sReturn)
+''	V.Local.sReturn.Set(V.Args.Return)
+''F.Intrinsic.Control.EndIf
+
+''F.Intrinsic.Control.CallSub(CommitBinTransaction,"sTransID",V.Passed.DATA-TRANSID,"Return",V.Local.sReturn,"Part",V.Args.Part,"Desc",V.Args.Desc,"Bin",V.Args.Bin,"Qty",V.Args.Qty)
+F.Intrinsic.Control.CallSub(CommitBinTransaction,"sTransID",V.Passed.DATA-TRANSID,"Part",V.Args.Part,"Desc",V.Args.Desc,"Bin",V.Args.Bin,"Qty",V.Args.Qty)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("<font color={6}red{6}><b>Project: {0}{1}<br>{1}<br>Subroutine: {2}{1}<br>Error Occurred {3} with description {4}{1}<br>{1}<br>GAB Version: {5}</b></font>",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Passed.DATA-TRANSID,V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+Program.Sub.BinInTransChecks.Start
+'Args: V.Args.sTransID
+V.Local.sError.Declare
+V.Local.sSQL.Declare
+V.Local.sPart.Declare
+V.Local.sBin.Declare
+V.Local.sDesc.Declare
+V.Local.sReturn.Declare
+V.Local.fQty.Declare
+F.Intrinsic.Control.Try
+
+F.Intrinsic.String.Build("select rtrim(FIELD_1), rtrim(FIELD_2), rtrim(FIELD_3) from V_WIRELESS_LINE where TRANS_ID = '{0}';",V.Args.sTransID,V.Local.sSQL)
+F.ODBC.Connection!con.OpenCompanyConnection
+F.ODBC.Connection!con.ExecuteAndReturn(V.Local.sSQL,V.Local.sSQL)
+F.Intrinsic.Control.If(V.Ambient.ExecuteAndReturnEOF)
+	F.Intrinsic.String.Build("<font color={0}red{0}><b>Could not read the values selected</b></font>",V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.Split(V.Local.sSQL,"*!*",V.Local.sSQL)
+V.Local.sSQL.RedimPreserve(0,2)
+V.Local.sPart.Set(V.Local.sSQL(0))
+V.Local.sBin.Set(V.Local.sSQL(1))
+V.Local.fQty.Set(V.Local.sSQL(2).Float)
+F.Intrinsic.Control.If(V.Local.sPart.Trim,=,"","or",V.Local.sBin.Trim,=,"",V.Local.sSQL(2).Trim,=,"")
+	F.Intrinsic.String.Build("<font color={0}red{0}><b>Part, Bin and Qty cannot be blank</b></font>",V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.If(V.Local.fQty,=,0)
+	F.Intrinsic.String.Build("<font color={0}red{0}><b>Qty cannot be zero</b></font>",V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+V.Local.sSQL.Redim(0,0)
+F.Intrinsic.String.Build("select top 1 rtrim(DESCRIPTION) from V_INVENTORY_MSTR where PART = '{0}';",V.Local.sPart,V.Local.sSQL)
+F.ODBC.Connection!con.ExecuteAndReturn(V.Local.sSQL,V.Local.sDesc)
+F.Intrinsic.Control.If(V.Ambient.ExecuteAndReturnEOF)
+	F.Intrinsic.String.Build("<font color={0}red{0}><b>WARNING: No entry in Global Inventory Master for Part {1}, Description could not be found</b></font>{2}<br>",V.Ambient.DblQuote,V.Local.sPart,V.Ambient.NewLine,V.Local.sReturn)
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.Build("select PART, DESCRIPTION, BIN, QTY from GCG_5660_BIN_PARTS where BIN = '{0}';",V.Local.sBin,V.Local.sSQL)
+F.Data.DataTable.CreateFromSQL("dtBins","con",V.Local.sSQL,True)
+F.ODBC.Connection!con.Close
+
+F.Intrinsic.Variable.AddRV("Part",V.Local.sPart)
+F.Intrinsic.Variable.AddRV("Desc",V.Local.sDesc)
+F.Intrinsic.Variable.AddRV("Bin",V.Local.sBin)
+F.Intrinsic.Variable.AddRV("Qty",V.Local.fQty)
+''F.Intrinsic.Variable.AddRV("Return",V.Local.sReturn)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("<font color={6}red{6}><b>Project: {0}{1}<br>{1}<br>Subroutine: {2}{1}<br>Error Occurred {3} with description {4}{1}<br>{1}<br>GAB Version: {5}</b></font>",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.BinInTransChecks.End
+Program.Sub.RemoveBinsInTable.Start
+'Args: V.Args.sTransID
+V.Local.sError.Declare
+V.Local.sSQL.Declare
+V.Local.sReturn.Declare
+V.Local.sQty.Declare
+V.Local.iCnt.Declare
+F.Intrinsic.Control.Try
+
+V.Local.sReturn.Set("Parts in Bin that have been removed:")
+F.Intrinsic.Control.For(V.Local.iCnt,0,V.DataTable.dtBins.RowCount--,1)
+	F.Intrinsic.String.Format(V.DataTable.dtBins(V.Local.iCnt).QTY!FieldValTrim,"#,###,##0.0000",V.Local.sQty)
+	F.Intrinsic.String.Build("{0}{1}<br>Part {2} / Bin {3} of Quantity {4}",V.Local.sReturn,V.Ambient.NewLine,V.DataTable.dtBins(V.Local.iCnt).PART!FieldValTrim,V.DataTable.dtBins(V.Local.iCnt).BIN!FieldValTrim,V.Local.sQty,V.Local.sReturn)
+F.Intrinsic.Control.Next(V.Local.iCnt)
+F.Intrinsic.String.Build("delete from GCG_5660_BIN_PARTS where BIN = '{0}';",V.DataTable.dtBins(0).BIN!FieldValTrim,V.Local.sSQL)
+F.ODBC.Connection!con.OpenCompanyConnection
+F.ODBC.Connection!con.Execute(V.Local.sSQL)
+F.ODBC.Connection!con.Close
+
+F.Intrinsic.Variable.AddRV("Return",V.Local.sReturn)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("<font color={6}red{6}><b>Project: {0}{1}<br>{1}<br>Subroutine: {2}{1}<br>Error Occurred {3} with description {4}{1}<br>{1}<br>GAB Version: {5}</b></font>",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.RemoveBinsInTable.End
+Program.Sub.CommitBinTransaction.Start
+'Args: V.Args.sTransID, V.Args.Return, V.Args.Part, V.Args.Desc, V.Args.Bin, V.Args.Qty
+V.Local.sError.Declare
+V.Local.sSQL.Declare
+V.Local.sQty.Declare
+V.Local.sReturn.Declare
+F.Intrinsic.Control.Try
+
+''F.Intrinsic.String.Format(V.Args.Qty,"0.0000",V.Local.sQty)
+F.Intrinsic.String.Build("insert into GCG_5660_BIN_PARTS (PART, DESCRIPTION, BIN, QTY) values ('{0}', '{1}', '{2}', {3});",V.Args.Part,V.Args.Desc,V.Args.Bin,V.Args.Qty,V.Local.sSQL)
+''F.Intrinsic.String.Build("{0}{1}<br>",V.Args.Return,V.Ambient.NewLine,V.Local.sReturn)
+''F.Intrinsic.String.Format(V.Args.Qty,"#,###,##0.0000",V.Local.sQty)
+''F.Intrinsic.String.Build("{0}Part {1} has been moved into Bin {2} with Quantity {3}",V.Local.sReturn,V.Args.Part,V.Args.Bin,V.Local.sQty,V.Local.sReturn)
+
+F.Intrinsic.String.Build("<font color={0}green{0}><b>Part {1}{2}<br> Bin {3}{2}<br> Quantity {4}</b></font>{2}<br>",V.Ambient.DblQuote, V.Args.Part, V.Ambient.NewLine, V.Args.Bin, V.Args.Qty, V.Local.sReturn)
+
+F.ODBC.Connection!con.OpenCompanyConnection
+F.ODBC.Connection!con.Execute(V.Local.sSQL)
+F.ODBC.Connection!con.Close
+F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sReturn)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("<font color={6}red{6}><b>Project: {0}{1}<br>{1}<br>Subroutine: {2}{1}<br>Error Occurred {3} with description {4}{1}<br>{1}<br>GAB Version: {5}</b></font>",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+
+Program.Sub.CommitBinTransaction.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$apadilla$}$20210805153950836$}$Lag9STqBJOmNXSbd5+msRcBWPGz0aFqSGjpgCwFu86BIEilvyHxdAFruKQKgAupP+KFR8A+UPaVJe6N4tjWTHQ==
+Program.Sub.Comments.End
