@@ -1,0 +1,131 @@
+﻿Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Author: Bix
+'Date: 3 Sept 2019
+'GCG_5660_Custom_Bin_OUT_Mobile.g2u
+'Bin OUT custom mobile transaction
+'Modified by Arturo Almaguer on 17 Aug 2021 to allow user to delete a part stored in a bin, but not clearing out the whole bin (as original BIN OUT transaction worked)
+
+V.Local.sError.Declare(String)
+
+F.Intrinsic.Control.Try
+
+	F.Intrinsic.Control.CallSub(BinOutTransChecks,"sTransID",V.Passed.DATA-TRANSID)
+
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.String.Build("<font color={6}red{6}><b>Project: {0}{1}<br>{1}<br>Subroutine: {2}{1}<br>Error Occurred {3} with description {4}{1}<br>{1}<br>GAB Version: {5}</b></font>",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Passed.DATA-TRANSID,V.Local.sError)
+	F.Intrinsic.Control.End
+	
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+Program.Sub.BinOutTransChecks.Start
+'Args: V.Args.sTransID
+V.Local.sError.Declare(String)
+V.Local.sSQL.Declare(String)
+V.Local.sSQL2.Declare(String)
+V.Local.sJob.Declare(String)
+V.Local.sSuffix.Declare(String)
+V.Local.sSequence.Declare(String)
+V.Local.sPart.Declare(String)
+V.Local.sBin.Declare(String)
+V.Local.sReturn.Declare(String)
+
+F.Intrinsic.Control.Try
+
+	'Field 1 = Bin, Field 2 = Part, Field 3 = Job Suf Seq
+	F.Intrinsic.String.Build("select RTRIM(FIELD_1) BIN, RTRIM(FIELD_2) PART, RTRIM(FIELD_3) JSS from V_WIRELESS_LINE where TRANS_ID = '{0}';",V.Args.sTransID,V.Local.sSQL)
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	F.Data.DataTable.CreateFromSQL("dtTransaction", "Con", V.Local.sSQL, True)
+	F.ODBC.Connection!Con.Close
+	
+	'Setting variables
+	V.Local.sPart.Set(V.DataTable.dtTransaction(0).PART!FieldValTrim)
+	V.Local.sBin.Set(V.DataTable.dtTransaction(0).BIN!FieldValTrim)
+	F.Intrinsic.String.Left(V.DataTable.dtTransaction(0).JSS!FieldValTrim,6,V.Local.sJob)
+	F.Intrinsic.String.Mid(V.DataTable.dtTransaction(0).JSS!FieldValTrim, 7, 3, V.Local.sSuffix)
+	F.Intrinsic.String.Right(V.DataTable.dtTransaction(0).JSS!FieldValTrim,6,V.Local.sSequence)
+	
+	'Displaying error message if bin is submitted with no value in field
+	F.Intrinsic.Control.If(V.Local.sBin,=,"")
+		F.Intrinsic.String.Build("<font color={0}red{0}><b>Bin cannot be blank</b></font>",V.Ambient.DblQuote,V.Local.sError)
+		F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sError)
+		F.Intrinsic.Control.End
+	F.Intrinsic.Control.EndIf
+	
+	'Opening connection
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	
+	F.Intrinsic.Control.If(V.Local.sPart,=,"", "AND", V.DataTable.dtTransaction(0).JSS!FieldValTrim,=,"")
+	
+		'User just passed bin, to clear out that bin
+		'Checking if bin exists already in custom table
+		F.Intrinsic.String.Build("select * from GCG_5660_BIN_PARTS where BIN = '{0}';", V.Local.sBin, V.Local.sSQL)
+		F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL,V.Local.sSQL)
+		
+		'If it is not blank then delete record, if it is blank display error message
+		F.Intrinsic.Control.If(V.Local.sSQL, <>, "")
+			
+			F.Intrinsic.String.Split(V.Local.sSQL, "*!*", V.Local.sSQL)
+			F.Intrinsic.String.Build("delete from GCG_5660_BIN_PARTS where BIN = '{0}';", V.Local.sBin, V.Local.sSQL2)
+			F.ODBC.Connection!Con.Execute(V.Local.sSQL2)
+			F.Intrinsic.String.Build("<font color={0}green{0}><b>Part removed:{2}<br> Part {1}{2}<br> Bin {3}{2}<br>  Qty {4}{2}<br></b></font>{2}<br>",V.Ambient.DblQuote, V.Local.sSQL(0), V.Ambient.NewLine, V.Local.sSQL(2),  V.Local.sSQL(3), V.Local.sReturn)
+			F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sReturn)
+	
+		F.Intrinsic.Control.Else
+		
+		'Record doesn't exist in custom table
+			F.Intrinsic.String.Build("<font color={0}red{0}><b>WARNING: No entry for Bin {1} in custom table</b></font>{2}<br>",V.Ambient.DblQuote, V.Local.sBin, V.Ambient.NewLine, V.Local.sReturn)
+			F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sReturn)
+		
+		F.Intrinsic.Control.EndIf
+		
+	F.Intrinsic.Control.ElseIf(V.Local.sPart,<>,"", "AND", V.DataTable.dtTransaction(0).JSS!FieldValTrim,<>,"")
+		
+		'Checking if part, bin, job/suf/seq exist already in custom table
+		F.Intrinsic.String.Build("select * from GCG_5660_BIN_PARTS where PART = '{0}' and BIN = '{1}' and JSS = '{2}';", V.Local.sPart, V.Local.sBin, V.DataTable.dtTransaction(0).JSS!FieldValTrim, V.Local.sSQL)
+		F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL,V.Local.sSQL)
+				
+		'If it is not blank then delete record, if it is blank display error message
+		F.Intrinsic.Control.If(V.Local.sSQL, <>, "")
+			
+			F.Intrinsic.String.Split(V.Local.sSQL, "*!*", V.Local.sSQL)
+			F.Intrinsic.String.Build("delete from GCG_5660_BIN_PARTS where PART = '{0}' and BIN = '{1}' and JSS = '{2}';", V.Local.sPart, V.Local.sBin, V.DataTable.dtTransaction(0).JSS!FieldValTrim, V.Local.sSQL)
+			F.ODBC.Connection!Con.Execute(V.Local.sSQL)
+			F.Intrinsic.String.Build("<font color={0}green{0}><b>Part removed:{2}<br> Part {1}{2}<br> Linked to Job {4}-{5}-{6}{2}<br> Bin {3}{2}<br> Qty {7}{2}<br></b></font>{2}<br>",V.Ambient.DblQuote, V.Local.sPart, V.Ambient.NewLine, V.Local.sBin, V.Local.sJob, V.Local.sSuffix, V.Local.sSequence,  V.Local.sSQL(3), V.Local.sReturn)
+			F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sReturn)
+		
+		F.Intrinsic.Control.Else
+			
+			'Record doesn't exist in custom table
+			F.Intrinsic.String.Build("<font color={0}red{0}><b>There was no Part {1}{2}<br> Linked to Job {4}-{5}-{6}{2}<br> In Bin {3}{2}<br> No changes were made</b></font>{2}<br>",V.Ambient.DblQuote, V.Local.sPart, V.Ambient.NewLine, V.Local.sBin, V.Local.sJob, V.Local.sSuffix, V.Local.sSequence, V.Local.sReturn)
+			F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sReturn)
+			
+		F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.Else
+	
+		F.Intrinsic.String.Build("<font color={0}red{0}><b>Transaction didn't process</b></font>{1}<br>",V.Ambient.DblQuote, V.Ambient.NewLine, V.Local.sReturn)
+		F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sReturn)
+			
+	F.Intrinsic.Control.EndIf
+	
+	'Closing connection
+	F.ODBC.Connection!Con.Close
+
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.String.Build("<font color={6}red{6}><b>Project: {0}{1}<br>{1}<br>Subroutine: {2}{1}<br>Error Occurred {3} with description {4}{1}<br>{1}<br>GAB Version: {5}</b></font>",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Ambient.DblQuote,V.Local.sError)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.sTransID,V.Local.sError)
+	F.Intrinsic.Control.End
+	
+F.Intrinsic.Control.EndTry
+Program.Sub.BinOutTransChecks.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$apadilla$}$20210819132546442$}$Lag9STqBJOmNXSbd5+msRcBWPGz0aFqSGjpgCwFu86BYHeJgtg46L7CJWmG+FZV9d8AJbvoKJoAkndzNy0QxJA==
+Program.Sub.Comments.End
